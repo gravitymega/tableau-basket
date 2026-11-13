@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Tableau Basket</title>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Inter:wght@400;600;800&display=swap">
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #07090d; --panel: #10141c; --line: #232a38; --ink: #e6e9ef; --muted: #8a93a6;
+    --red: #ff3434; --yellow: #ffb700; --green: #00ff66; --amber: #f59e0b; --ok: #34d399;
+    --led: 'Orbitron', 'Courier New', monospace; --ui: 'Inter', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { min-height: 100%; }
+  body { background: var(--bg); color: var(--ink); font-family: var(--ui); margin: 0;
+    padding-block: max(12px, env(safe-area-inset-top, 0px)) max(24px, env(safe-area-inset-bottom, 0px));
+    padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px));
+    user-select: none; -webkit-user-select: none; }
+
+  /* Choix du rôle */
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 50; display: grid; place-items: center; padding: 16px; }
+  .modal .box { background: #0f131b; border: 1px solid var(--line); border-radius: 20px; max-width: 420px; width: 100%; padding: 24px; display: grid; gap: 16px; text-align: center; }
+  .modal h1 { font: 900 1.5rem var(--led); color: var(--amber); margin: 0; letter-spacing: .05em; }
+  .modal p { color: var(--muted); margin: 0; font-size: .9rem; }
+
+  /* Barre du laptop */
+  .bar { max-width: 1280px; margin: 0 auto 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 12px 16px;
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
+  .bar .pin { display: flex; gap: 14px; align-items: center; }
+  #qrcode { background: #fff; padding: 6px; border-radius: 10px; width: 92px; height: 92px; }
+  #qrcode img, #qrcode canvas { width: 80px; height: 80px; }
+  .pinval { font: 900 2rem var(--led); color: var(--amber); letter-spacing: .2em; }
+  .small { font-size: .75rem; color: var(--muted); }
+  .bar .right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .status { font-size: .78rem; font-weight: 700; padding: 6px 12px; border-radius: 999px; border: 1px solid; }
+  .status.wait { color: var(--amber); border-color: rgba(245,158,11,.3); background: rgba(245,158,11,.08); }
+  .status.ok { color: var(--ok); border-color: rgba(52,211,153,.3); background: rgba(52,211,153,.08); }
+  .status.err { color: #f87171; border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.08); }
+  .modes { display: flex; background: #0b0e14; border: 1px solid var(--line); border-radius: 999px; padding: 4px; gap: 4px; }
+  .modes button { border: 0; background: transparent; color: var(--muted); font: 700 .85rem var(--ui); padding: 7px 14px; border-radius: 999px; cursor: pointer; }
+  .modes button[aria-pressed="true"] { background: var(--amber); color: #111; }
+  :fullscreen .bar, :fullscreen .keys { display: none; }
+
+  /* Tableau */
+  .board { max-width: 1280px; margin: 0 auto; background: #080a0f; border: 4px solid #1f2533; border-radius: 24px; padding: clamp(12px, 2.5vw, 28px); display: grid; gap: 20px; }
+  :fullscreen .board { max-width: none; min-height: 100vh; border-radius: 0; border: 0; align-content: center; }
+  .row { display: grid; grid-template-columns: minmax(0,5fr) minmax(0,2.4fr) minmax(0,5fr); gap: clamp(8px, 1.5vw, 18px); align-items: center; }
+  .team { display: grid; gap: 10px; justify-items: center; min-width: 0; }
+  .team input { background: transparent; border: 0; border-bottom: 1px solid transparent; color: var(--ink); font: 800 clamp(1rem, 3vw, 2.4rem) var(--ui); text-align: center; text-transform: uppercase; width: 100%; min-width: 0; }
+  .team input:focus { outline: none; border-bottom-color: var(--line); }
+  .led-box { background: #121620; border: 2px solid #222938; box-shadow: inset 0 0 15px rgba(0,0,0,.8); border-radius: 18px; text-align: center; width: 100%; padding: 10px 4px; }
+  .digits { font-family: var(--led); font-weight: 900; font-variant-numeric: tabular-nums; line-height: 1; }
+  .score { font-size: clamp(2.6rem, 10vw, 9rem); }
+  .red { color: var(--red); text-shadow: 0 0 12px rgba(255,42,42,.8), 0 0 25px rgba(255,42,42,.4); }
+  .yellow { color: var(--yellow); text-shadow: 0 0 12px rgba(255,183,0,.8), 0 0 25px rgba(255,183,0,.4); }
+  .green { color: var(--green); text-shadow: 0 0 12px rgba(0,255,102,.8), 0 0 25px rgba(0,255,102,.4); }
+  .meta { display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 6px; flex-wrap: wrap; font-size: .75rem; color: var(--muted); font-weight: 700; letter-spacing: .06em; }
+  .meta .digits { font-size: 1.5rem; }
+  .dots { display: flex; gap: 4px; }
+  .dot { width: 13px; height: 13px; border-radius: 50%; border: 1px solid currentColor; }
+  .dot.on { background: currentColor; } .dot.off { opacity: .25; }
+  .bonus { padding: 2px 6px; border-radius: 4px; color: #fff; font-size: .75rem; animation: pulse 1s infinite; }
+  .center { display: grid; gap: 14px; justify-items: center; min-width: 0; }
+  .poss { display: flex; gap: 10px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 6px 12px; font-size: .7rem; color: var(--muted); font-weight: 700; }
+  .arrow { font-size: 1.5rem; color: #2a3140; }
+  .arrow.home { color: var(--red); animation: pulse 1s infinite; }
+  .arrow.guest { color: var(--yellow); animation: pulse 1s infinite; }
+  .label { font-size: .65rem; color: var(--muted); font-weight: 700; letter-spacing: .14em; }
+  .period { font-size: clamp(1.6rem, 3.5vw, 2.8rem); }
+  .shot { font-size: clamp(2rem, 5.5vw, 4.5rem); }
+  .clock { cursor: pointer; padding: 18px 4px; }
+  .clock .digits { font-size: clamp(3rem, 12vw, 9rem); letter-spacing: .05em; }
+  .banner { text-align: center; font: 900 clamp(1.2rem, 3.5vw, 2.4rem) var(--led); color: var(--green); letter-spacing: .1em; }
+  .keys { max-width: 1280px; margin: 10px auto 0; color: var(--muted); font-size: .78rem; text-align: center; }
+  kbd { font-family: var(--ui); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--ink); }
+  .toast { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--amber); color: #111; font-weight: 800;
+    padding: 12px 18px; border-radius: 12px; z-index: 60; cursor: pointer; max-width: calc(100% - 32px); text-align: center; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+
+  /* Télécommande */
+  .remote { max-width: 440px; margin: 0 auto; display: grid; gap: 12px; }
+  .grid { display: grid; gap: 8px; }
+  .g2 { grid-template-columns: 1fr 1fr; } .g3 { grid-template-columns: repeat(3, 1fr); } .g4 { grid-template-columns: repeat(4, 1fr); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 12px; display: grid; gap: 10px; }
+  .card h3 { margin: 0; font-size: .7rem; letter-spacing: .12em; color: var(--amber); text-align: center; }
+  .teamhead { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; border-bottom: 1px solid var(--line); padding-bottom: 6px; font-weight: 800; }
+  .teamhead small { color: var(--muted); font-weight: 600; font-size: .75rem; }
+  .rclock { display: flex; justify-content: space-between; align-items: center; }
+  .rclock .digits { font-size: 1.8rem; }
+  .btn { border: 1px solid var(--line); background: #1b2130; color: var(--ink); font: 700 .95rem var(--ui); border-radius: 10px; padding: 13px 4px; cursor: pointer; touch-action: manipulation; }
+  .btn:active { transform: scale(.95); }
+  .btn:focus-visible, .modes button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  .btn.big { font-size: 1.1rem; padding: 18px 4px; font-weight: 900; }
+  .btn.amber { background: var(--amber); color: #111; border-color: var(--amber); }
+  .btn.red { background: #dc2626; color: #fff; border-color: #dc2626; }
+  .btn.blue { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .btn.green { background: #059669; color: #fff; border-color: #059669; text-shadow: none; }
+  .btn.hr { background: #2a0e10; border-color: #6b1d1d; color: #ff8a8a; }
+  .btn.hy { background: #2a1f05; border-color: #6b5112; color: #ffd166; }
+  .btn.dim { color: var(--muted); }
+  #pinInput { width: 100%; text-align: center; font: 900 2rem var(--led); letter-spacing: .3em; background: #07090d; border: 2px solid var(--amber); border-radius: 12px; padding: 12px; color: var(--amber); }
+  #pinInput:focus { outline: none; box-shadow: 0 0 0 3px rgba(245,158,11,.3); }
+  .rstatus { font-size: .85rem; color: var(--muted); text-align: center; margin: 0; }
+  .rstatus.err { color: #f87171; }
+  .rtop { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .78rem; font-weight: 700; color: var(--muted); }
+</style>
+</head>
+<body data-role="display">
+
+<!-- CHOIX DU RÔLE -->
+<div id="roleModal" class="modal" hidden>
+  <div class="box">
+    <h1>BASKETBALL SCOREBOARD</h1>
+    <p>Choisis le rôle de cet appareil</p>
+    <button class="btn big blue" id="pickDisplay">Écran d'affichage (laptop)</button>
+    <button class="btn big green" id="pickRemote">Télécommande (cellulaire)</button>
+  </div>
+</div>
+
+<!-- TÉLÉCOMMANDE -->
+<div id="remoteView" class="remote" hidden>
+  <div id="remoteConnect" class="card" style="padding:20px; gap:14px">
+    <h3 style="font-size:1rem">CONNEXION À L'ÉCRAN</h3>
+    <p class="rstatus">Entre le code PIN à 4 chiffres affiché sur le laptop :</p>
+    <input id="pinInput" inputmode="numeric" maxlength="4" placeholder="8492" autocomplete="off" aria-label="Code PIN">
+    <button class="btn big amber" id="connectBtn">Se connecter</button>
+    <p id="remoteStatus" class="rstatus">En attente du code…</p>
+  </div>
+
+  <div id="remoteControls" class="remote" hidden>
+    <div class="rtop"><span id="rLink" style="color:var(--ok)">● Connectée (PIN <span id="rPin"></span>)</span><span id="rMode"></span></div>
+    <div class="card">
+      <div class="rclock"><span class="digits green" id="rClock">10:00</span><span class="small">SHOT <span class="digits yellow" id="rShot" style="font-size:1.3rem">24</span></span><span class="small" id="rPeriod">P1</span></div>
+    </div>
+    <div class="grid g2">
+      <button class="btn big amber" data-cmd="toggleClock" id="rStart">START / PAUSE</button>
+      <button class="btn big red" data-cmd="toggleBuzzer">BUZZER</button>
+    </div>
+    <div class="grid g2" id="rShotBtns"></div>
+    <div class="card">
+      <div class="teamhead"><span style="color:var(--red)" id="rHomeName">DOMICILE</span><span><small id="rHomeInfo"></small> <span class="digits red" id="rHome" style="font-size:1.5rem">0</span></span></div>
+      <div class="grid" id="homePts"></div>
+      <div class="grid g2">
+        <button class="btn dim" data-cmd="addFoul" data-team="home">+ Faute</button>
+        <button class="btn dim" data-cmd="useTimeout" data-team="home">Temps mort</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="teamhead"><span style="color:var(--yellow)" id="rGuestName">VISITEUR</span><span><small id="rGuestInfo"></small> <span class="digits yellow" id="rGuest" style="font-size:1.5rem">0</span></span></div>
+      <div class="grid" id="guestPts"></div>
+      <div class="grid g2">
+        <button class="btn dim" data-cmd="addFoul" data-team="guest">+ Faute</button>
+        <button class="btn dim" data-cmd="useTimeout" data-team="guest">Temps mort</button>
+      </div>
+    </div>
+    <button class="btn dim" data-cmd="togglePossession">Changer la flèche de possession</button>
+    <div class="card">
+      <h3>CHRONO DE JEU</h3>
+      <div class="grid g4">
+        <button class="btn" data-cmd="adjustTime" data-v="60">+1 min</button>
+        <button class="btn" data-cmd="adjustTime" data-v="-60">−1 min</button>
+        <button class="btn" data-cmd="adjustTime" data-v="10">+10 s</button>
+        <button class="btn" data-cmd="adjustTime" data-v="-10">−10 s</button>
+      </div>
+      <div class="grid g2">
+        <button class="btn" data-cmd="adjustTime" data-v="1">+1 s</button>
+        <button class="btn" data-cmd="adjustTime" data-v="-1">−1 s</button>
+      </div>
+      <button class="btn hr" data-cmd="resetGame">RESET CHRONO (10:00)</button>
+    </div>
+    <div class="card" id="rPeriodCard">
+      <h3>PÉRIODES</h3>
+      <div class="grid g2">
+        <button class="btn" data-cmd="changePeriod" data-v="-1">◀ Période préc.</button>
+        <button class="btn amber" data-cmd="changePeriod" data-v="1">Période suiv. ▶</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>RÈGLES</h3>
+      <div class="grid g2">
+        <button class="btn" data-cmd="setMode" data-v="5x5" id="rM5">5 contre 5</button>
+        <button class="btn" data-cmd="setMode" data-v="3x3" id="rM3">3x3</button>
+      </div>
+      <p class="small" style="margin:0;text-align:center">Changer les règles remet le match à zéro.</p>
+      <button class="btn hr" data-cmd="newGame">NOUVEAU MATCH (tout à zéro)</button>
+    </div>
+    <button class="btn dim" data-cmd="fullscreen">Plein écran (laptop)</button>
+  </div>
+</div>
+
+<!-- LAPTOP -->
+<div id="displayView" hidden>
+  <div class="bar">
+    <div class="pin">
+      <div id="qrcode"></div>
+      <div>
+        <div class="small" style="font-weight:700;letter-spacing:.08em">CODE DE LA TÉLÉCOMMANDE</div>
+        <div id="displayPin" class="pinval">----</div>
+        <div class="small">Scanne le QR code ou tape ce code sur ton téléphone.</div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="modes" role="group" aria-label="Règles">
+        <button id="m5" aria-pressed="true">5 contre 5</button>
+        <button id="m3" aria-pressed="false">3x3</button>
+      </div>
+      <button class="btn" id="newGameBtn" style="padding:8px 12px">Nouveau match</button>
+      <button class="btn" id="fsBtn" style="padding:8px 12px" title="Plein écran (touche F)">Plein écran</button>
+      <div id="peerStatus" class="status wait">Connexion au service…</div>
+    </div>
+  </div>
+
+  <section class="board" aria-label="Tableau d'affichage">
+    <div class="row">
+      <div class="team">
+        <input id="homeName" value="DOMICILE" maxlength="16" aria-label="Nom de l'équipe domicile">
+        <div class="led-box"><span id="homeScore" class="digits score red">000</span></div>
+        <div class="meta">
+          <span>FAUTES <span id="homeFouls" class="digits red">0</span></span>
+          <span id="homeBonus" class="bonus" style="background:#dc2626" hidden>BONUS</span>
+          <span id="homeTO" class="dots" style="color:var(--red)" title="Temps morts restants"></span>
+        </div>
+      </div>
+      <div class="center">
+        <div class="poss"><span id="posL" class="arrow">◄</span>POSS<span id="posR" class="arrow">►</span></div>
+        <div style="text-align:center"><div class="label" id="periodLabel">PÉRIODE</div><div id="period" class="digits period yellow">1</div></div>
+        <div class="led-box"><div class="label">SHOT CLOCK</div><div id="shot" class="digits shot yellow">24</div></div>
+      </div>
+      <div class="team">
+        <input id="guestName" value="VISITEUR" maxlength="16" aria-label="Nom de l'équipe visiteur">
+        <div class="led-box"><span id="guestScore" class="digits score yellow">000</span></div>
+        <div class="meta">
+          <span id="guestTO" class="dots" style="color:var(--yellow)" title="Temps morts restants"></span>
+          <span id="guestBonus" class="bonus" style="background:#ca8a04" hidden>BONUS</span>
+          <span>FAUTES <span id="guestFouls" class="digits yellow">0</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="led-box clock" id="clockBox" title="Clic : départ / pause">
+      <div class="label">TEMPS DE JEU RESTANT</div>
+      <div id="clock" class="digits green">10:00</div>
+    </div>
+    <div id="banner" class="banner" hidden></div>
+  </section>
+  <div class="keys">Clavier : <kbd>Espace</kbd> chrono · <kbd>R</kbd> shot clock · <kbd>E</kbd> 14 s (5x5) · <kbd>B</kbd> buzzer · <kbd>F</kbd> plein écran</div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script>
+// ================= RÈGLES =================
+const RULES = {
+  '5x5': { name: '5 contre 5', game: 600, shot: 24, shotB: 14, pts: [1,2,3], timeouts: 3, periods: 4, bonusAt: 5, target: null },
+  '3x3': { name: '3x3',        game: 600, shot: 12, shotB: null, pts: [1,2], timeouts: 1, periods: 1, bonusAt: 7, target: 21 }
+};
+const PREFIX = 'tableau-basket-yq-';   // nom du "canal" PeerJS
+const $ = id => document.getElementById(id);
+
+let role = null, mode = '5x5', R = RULES[mode], s = null;
+let peer = null, conns = new Set(), conn = null, pin = null;
+let tick = null, msLeft = 0, lastT = 0;
+let audio = null, osc = null, oscTimer = null;
+
+function fresh() {
+  return { mode, gameTime: R.game, shot: R.shot, running: false, home: 0, guest: 0, homeFouls: 0, guestFouls: 0,
+           homeTO: R.timeouts, guestTO: R.timeouts, period: 1, poss: 'home', banner: '',
+           homeName: $('homeName').value || 'DOMICILE', guestName: $('guestName').value || 'VISITEUR' };
+}
+function store(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+function load(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+
+function toast(msg, onClick, ms = 4000) {
+  const t = $('toast'); t.textContent = msg; t.hidden = false;
+  t.onclick = () => { t.hidden = true; onClick && onClick(); };
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => t.hidden = true, ms);
+}
+
+// ================= RÔLE =================
+function selectRole(r) {
+  role = r; $('roleModal').hidden = true;
+  if (r === 'display') { $('displayView').hidden = false; initDisplay(); }
+  else { $('remoteView').hidden = false; }
+}
+$('pickDisplay').onclick = () => { ensureAudio(); selectRole('display'); };
+$('pickRemote').onclick = () => { selectRole('remote'); $('pinInput').focus(); };
+
+// ================= LAPTOP =================
+function initDisplay() {
+  const saved = load('tb-state');
+  if (saved && RULES[saved.mode]) { mode = saved.mode; R = RULES[mode]; s = Object.assign(fresh(), saved, { running: false }); }
+  else s = fresh();
+  $('homeName').value = s.homeName; $('guestName').value = s.guestName;
+  msLeft = s.gameTime * 1000;
+  applyModeUI();
+  pin = load('tb-pin') || newPin();
+  startPeer();
+
+  $('clockBox').onclick = () => run('toggleClock');
+  $('m5').onclick = () => run('setMode', '5x5');
+  $('m3').onclick = () => run('setMode', '3x3');
+  $('newGameBtn').onclick = () => {
+    if ($('newGameBtn').dataset.sure) { delete $('newGameBtn').dataset.sure; $('newGameBtn').textContent = 'Nouveau match'; run('newGame'); }
+    else { $('newGameBtn').dataset.sure = 1; $('newGameBtn').textContent = 'Sûr ? Re-cliquer'; setTimeout(() => { delete $('newGameBtn').dataset.sure; $('newGameBtn').textContent = 'Nouveau match'; }, 3000); }
+  };
+  $('fsBtn').onclick = toggleFullscreen;
+  for (const t of ['home', 'guest']) $(t + 'Name').addEventListener('input', e => { s[t + 'Name'] = e.target.value.toUpperCase(); changed(); });
+  document.addEventListener('pointerdown', ensureAudio);
+
+  window.addEventListener('keydown', e => {
+    if (e.target.matches('input, textarea')) { if (e.key === 'Enter') e.target.blur(); return; }   // bug 2 corrigé
+    const k = { Space: ['toggleClock'], KeyR: ['resetShot', R.shot], KeyE: R.shotB ? ['resetShot', R.shotB] : null,
+                KeyB: ['toggleBuzzer'], KeyF: ['fullscreenLocal'] }[e.code];
+    if (k) { e.preventDefault(); ensureAudio(); run(k[0], k[1]); }
+  });
+  render();
+}
+
+function newPin() { const p = String(Math.floor(1000 + Math.random() * 9000)); store('tb-pin', p); return p; }
+
+function startPeer() {
+  $('displayPin').textContent = pin;
+  setStatus('wait', 'Connexion au service…');
+  peer = new Peer(PREFIX + pin);
+  peer.on('open', () => {
+    const url = new URL('telecommande.html?pin=' + pin, location.href).href;
+    $('qrcode').innerHTML = '';
+    if (window.QRCode) new QRCode($('qrcode'), { text: url, width: 80, height: 80 });
+    updatePeerStatus();
+  });
+  peer.on('connection', c => {
+    c.on('open', () => { conns.add(c); updatePeerStatus(); c.send({ action: 'syncState', payload: s }); });
+    c.on('data', d => { if (d && d.action) { if (['toggleBuzzer','toggleClock'].includes(d.action)) ensureAudio(); run(d.action, d.payload, d.team); } });
+    c.on('close', () => { conns.delete(c); updatePeerStatus(); });
+    c.on('error', () => { conns.delete(c); updatePeerStatus(); });
+  });
+  peer.on('disconnected', () => { setStatus('err', 'Service perdu, reconnexion…'); setTimeout(() => { if (peer && !peer.destroyed) peer.reconnect(); }, 2000); });
+  peer.on('error', err => {
+    if (err.type === 'unavailable-id') {           // PIN déjà pris : on en prend un autre (bug 6)
+      peer.destroy(); pin = newPin(); startPeer();
+    } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') {
+      setStatus('err', 'Pas d\'Internet ? Nouvel essai…');
+      setTimeout(() => { if (peer.destroyed || peer.disconnected) { peer.destroy(); startPeer(); } }, 5000);
+    }
+  });
+}
+function setStatus(cls, txt) { $('peerStatus').className = 'status ' + cls; $('peerStatus').textContent = txt; }
+function updatePeerStatus() {   // bug 7 corrigé
+  const n = conns.size;
+  if (n) setStatus('ok', n === 1 ? 'Télécommande connectée' : n + ' télécommandes connectées');
+  else setStatus('wait', 'En attente de la télécommande…');
+}
+function broadcast() { for (const c of conns) if (c.open) try { c.send({ action: 'syncState', payload: s }); } catch (e) {} }
+
+// ---- Son (bug 4 corrigé : créé au premier geste sur le laptop)
+function ensureAudio() {
+  if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (audio && audio.state === 'suspended') audio.resume();
+}
+function buzz() {
+  ensureAudio(); if (!audio || osc) return;
+  osc = audio.createOscillator(); const g = audio.createGain();
+  osc.type = 'sawtooth'; osc.frequency.value = 150; g.gain.value = 0.8;
+  osc.connect(g); g.connect(audio.destination); osc.start();
+  oscTimer = setTimeout(stopBuzz, 1500);
+  if (audio.state !== 'running') toast('Son bloqué : clique une fois sur le laptop', ensureAudio);
+}
+function stopBuzz() { clearTimeout(oscTimer); if (osc) { try { osc.stop(); osc.disconnect(); } catch (e) {} osc = null; } }
+
+// ---- Chrono (compte au vrai temps écoulé, garde les dixièmes à la pause)
+function startClock() {
+  if (s.running || s.gameTime <= 0 || s.banner) return;
+  if (s.shot <= 0 && s.gameTime > 0) s.shot = R.shot;
+  s.running = true; lastT = performance.now(); msLeft = Math.min(msLeft, s.gameTime * 1000) || s.gameTime * 1000;
+  let shotMs = s.shot * 1000;
+  tick = setInterval(() => {
+    const now = performance.now(), dt = now - lastT; lastT = now;
+    msLeft = Math.max(0, msLeft - dt); shotMs = Math.max(0, shotMs - dt);
+    const g = Math.ceil(msLeft / 1000), sh = Math.ceil(shotMs / 1000);
+    if (g !== s.gameTime || sh !== s.shot) {
+      s.gameTime = g; s.shot = sh;
+      if (g === 0) { stopClock(); buzz(); if (s.period >= R.periods) endGame(); }
+      else if (sh === 0) { stopClock(); buzz(); }   // bug 3 corrigé : un seul buzzer, le chrono s'arrête
+      changed();
+    }
+  }, 100);
+  startClock.setShot = v => { shotMs = v * 1000; };
+}
+function stopClock() { if (!s) return; s.running = false; clearInterval(tick); tick = null; startClock.setShot = null; }
+function setShot(v) { s.shot = v; if (startClock.setShot) startClock.setShot(v); }
+function setGame(sec) { s.gameTime = Math.max(0, sec); msLeft = s.gameTime * 1000; }
+
+function endGame(winner) {
+  const w = winner || (s.home > s.guest ? 'home' : s.guest > s.home ? 'guest' : null);
+  s.banner = w ? 'VICTOIRE : ' + (s[w + 'Name'] || '').toUpperCase() : (R.periods > 1 ? 'ÉGALITÉ : PROLONGATION ?' : 'ÉGALITÉ');
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen?.();
+  else document.documentElement.requestFullscreen?.().catch(() => toast('Plein écran refusé : appuie sur F sur le laptop'));
+}
+
+// ---- Commandes (laptop)
+const CMD = {
+  toggleClock: () => s.running ? stopClock() : startClock(),
+  toggleBuzzer: () => osc ? stopBuzz() : buzz(),
+  adjustTime: v => setGame(s.gameTime + Number(v)),
+  resetGame: () => { stopClock(); setGame(R.game); s.shot = R.shot; s.banner = ''; },
+  resetShot: v => setShot(Number(v)),
+  addScore: (v, t) => {
+    if (!['home','guest'].includes(t)) return;
+    s[t] = Math.max(0, s[t] + Number(v));
+    if (R.target && s[t] >= R.target && !s.banner) { stopClock(); buzz(); endGame(t); }
+  },
+  addFoul: (v, t) => { if (t === 'home' || t === 'guest') s[t + 'Fouls']++; },
+  removeFoul: (v, t) => { if (t === 'home' || t === 'guest') s[t + 'Fouls'] = Math.max(0, s[t + 'Fouls'] - 1); },
+  useTimeout: (v, t) => { if ((t === 'home' || t === 'guest') && s[t + 'TO'] > 0) { s[t + 'TO']--; stopClock(); } },
+  giveTimeout: (v, t) => { if ((t === 'home' || t === 'guest') && s[t + 'TO'] < R.timeouts) s[t + 'TO']++; },
+  changePeriod: v => {
+    const p = Math.min(R.periods + 3, Math.max(1, s.period + Number(v)));   // jusqu'à 3 prolongations
+    if (p === s.period) return;
+    stopClock(); s.period = p; s.homeFouls = 0; s.guestFouls = 0; s.shot = R.shot; s.banner = '';
+    if (Number(v) > 0) setGame(p > R.periods ? 300 : R.game);              // prolongation : 5 min
+  },
+  togglePossession: () => { s.poss = s.poss === 'home' ? 'guest' : 'home'; },
+  setMode: m => { if (!RULES[m] || m === mode) return; stopClock(); mode = m; R = RULES[m]; s = fresh(); msLeft = s.gameTime * 1000; applyModeUI(); },
+  newGame: () => { stopClock(); s = fresh(); msLeft = s.gameTime * 1000; },
+  fullscreen: () => toast('Plein écran : clique ici ou appuie sur F', toggleFullscreen, 8000),  // bug 8 : le navigateur exige un geste sur le laptop
+  fullscreenLocal: toggleFullscreen
+};
+function run(cmd, v, t) { if (!CMD[cmd]) return; CMD[cmd](v, t); changed(); }
+function changed() { render(); broadcast(); store('tb-state', s); }
+
+function applyModeUI() {
+  $('m5').setAttribute('aria-pressed', mode === '5x5'); $('m3').setAttribute('aria-pressed', mode === '3x3');
+}
+
+function dots(el, left, total) {
+  el.innerHTML = Array.from({ length: total }, (_, i) => `<span class="dot ${i < left ? 'on' : 'off'}"></span>`).join('');
+}
+const mmss = t => String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
+const periodTxt = () => s.period > R.periods ? 'P' + (s.period - R.periods) : String(s.period);
+
+function render() {
+  if (!s) return;
+  $('clock').textContent = mmss(s.gameTime);
+  $('shot').textContent = s.gameTime < s.shot ? '--' : String(s.shot).padStart(2, '0');
+  $('homeScore').textContent = String(s.home).padStart(3, '0');
+  $('guestScore').textContent = String(s.guest).padStart(3, '0');
+  $('homeFouls').textContent = s.homeFouls; $('guestFouls').textContent = s.guestFouls;
+  $('homeBonus').hidden = s.homeFouls < R.bonusAt; $('guestBonus').hidden = s.guestFouls < R.bonusAt;
+  dots($('homeTO'), s.homeTO, R.timeouts); dots($('guestTO'), s.guestTO, R.timeouts);   // bug 5 corrigé
+  $('period').textContent = periodTxt();
+  $('periodLabel').textContent = R.target ? 'PREMIER À ' + R.target : 'PÉRIODE';
+  $('posL').className = 'arrow' + (s.poss === 'home' ? ' home' : '');
+  $('posR').className = 'arrow' + (s.poss === 'guest' ? ' guest' : '');
+  $('banner').hidden = !s.banner; $('banner').textContent = s.banner;
+}
+
+// ================= TÉLÉCOMMANDE =================
+let rMode = null, retry = 0, wantConnected = false;
+
+function connectWithPin() {
+  const p = $('pinInput').value.replace(/\D/g, '');
+  $('pinInput').value = p;
+  if (p.length !== 4) return rStatus('Le code PIN doit avoir 4 chiffres.', true);
+  pin = p; wantConnected = true; retry = 0;
+  rStatus('Connexion en cours…');
+  openRemotePeer();
+}
+function openRemotePeer() {
+  if (peer && !peer.destroyed) { connectConn(); return; }
+  peer = new Peer();
+  peer.on('open', connectConn);
+  peer.on('error', err => {
+    if (err.type === 'peer-unavailable') {          // bug 6 corrigé
+      if (!$('remoteControls').hidden) return scheduleRetry();
+      wantConnected = false;
+      rStatus('Aucun écran avec le code ' + pin + '. Vérifie le code sur le laptop.', true);
+    } else if (err.type === 'network' || err.type === 'server-error' || err.type === 'socket-error') {
+      rStatus('Pas d\'Internet sur le téléphone ? Nouvel essai…', true);
+      scheduleRetry(true);
+    }
+  });
+  peer.on('disconnected', () => { if (wantConnected) setTimeout(() => peer && !peer.destroyed && peer.reconnect(), 2000); });
+}
+function connectConn() {
+  conn = peer.connect(PREFIX + pin, { reliable: true });
+  conn.on('open', () => {
+    retry = 0;
+    $('remoteConnect').hidden = true; $('remoteControls').hidden = false;
+    $('rPin').textContent = pin; setLink(true);
+  });
+  conn.on('data', d => { if (d && d.action === 'syncState') remoteRender(d.payload); });   // bug 1 corrigé
+  conn.on('close', () => { setLink(false); scheduleRetry(); });                             // bug 7 corrigé
+  conn.on('error', () => { setLink(false); scheduleRetry(); });
+}
+function scheduleRetry(fullPeer) {
+  if (!wantConnected) return;
+  clearTimeout(scheduleRetry.t);
+  retry++;
+  scheduleRetry.t = setTimeout(() => {
+    if (conn && conn.open) return;
+    if (fullPeer && peer) { peer.destroy(); peer = null; }
+    openRemotePeer();
+  }, Math.min(10000, 1000 * retry));
+}
+function setLink(ok) {
+  $('rLink').style.color = ok ? 'var(--ok)' : '#f87171';
+  $('rLink').innerHTML = ok ? '● Connectée (PIN <span id="rPin">' + pin + '</span>)' : '● Coupée, reconnexion…';
+}
+function rStatus(t, err) { $('remoteStatus').textContent = t; $('remoteStatus').className = 'rstatus' + (err ? ' err' : ''); }
+
+function sendCmd(action, payload, team) {
+  if (conn && conn.open) { conn.send({ action, payload, team }); if (navigator.vibrate) try { navigator.vibrate(35); } catch (e) {} }
+  else toast('Pas connecté à l\'écran');
+}
+
+function buildRemoteButtons(m) {
+  const r = RULES[m]; rMode = m;
+  $('rMode').textContent = 'Règles : ' + r.name;
+  $('rM5').className = 'btn' + (m === '5x5' ? ' amber' : '');
+  $('rM3').className = 'btn' + (m === '3x3' ? ' amber' : '');
+  const sb = $('rShotBtns'); sb.innerHTML = '';
+  sb.className = 'grid ' + (r.shotB ? 'g2' : '');
+  for (const v of [r.shot, r.shotB].filter(Boolean)) {
+    const b = document.createElement('button'); b.className = 'btn'; b.style.fontSize = '1.05rem';
+    b.textContent = 'RESET ' + v + ' s'; b.dataset.cmd = 'resetShot'; b.dataset.v = v; sb.appendChild(b);
+  }
+  $('rPeriodCard').hidden = r.periods === 1;
+  for (const t of ['home', 'guest']) {
+    const box = $(t + 'Pts'); box.innerHTML = '';
+    box.className = 'grid ' + (r.pts.length === 3 ? 'g4' : 'g3');
+    for (const v of [...r.pts, -1]) {
+      const b = document.createElement('button');
+      b.className = 'btn ' + (v < 0 ? 'dim' : t === 'home' ? 'hr' : 'hy');
+      b.style.fontSize = '1.2rem';
+      b.textContent = (v > 0 ? '+' : '−') + Math.abs(v);
+      b.dataset.cmd = 'addScore'; b.dataset.team = t; b.dataset.v = v;
+      box.appendChild(b);
+    }
+  }
+}
+function remoteRender(st) {
+  if (!st) return;
+  if (st.mode !== rMode) buildRemoteButtons(st.mode);
+  const r = RULES[st.mode];
+  $('rHome').textContent = st.home; $('rGuest').textContent = st.guest;
+  $('rHomeName').textContent = st.homeName; $('rGuestName').textContent = st.guestName;
+  $('rHomeInfo').textContent = st.homeFouls + ' f · ' + st.homeTO + ' TM';
+  $('rGuestInfo').textContent = st.guestFouls + ' f · ' + st.guestTO + ' TM';
+  $('rClock').textContent = mmss(st.gameTime);
+  $('rShot').textContent = String(st.shot).padStart(2, '0');
+  $('rPeriod').textContent = st.banner ? st.banner : (r.target ? 'Premier à ' + r.target : (st.period > r.periods ? 'Prol. ' + (st.period - r.periods) : 'Période ' + st.period));
+  $('rStart').textContent = st.running ? 'PAUSE' : 'START';
+}
+
+$('connectBtn').onclick = connectWithPin;
+$('pinInput').addEventListener('keydown', e => { if (e.key === 'Enter') connectWithPin(); });
+$('remoteControls').addEventListener('click', e => {
+  const b = e.target.closest('[data-cmd]'); if (!b) return;
+  if (b.dataset.cmd === 'newGame' || b.dataset.cmd === 'setMode') {    // confirmation avant de tout remettre à zéro
+    if (!b.dataset.sure) { b.dataset.sure = 1; const old = b.textContent; b.textContent = 'Sûr ? Re-appuie'; setTimeout(() => { delete b.dataset.sure; b.textContent = old; }, 3000); return; }
+    delete b.dataset.sure;
+  }
+  sendCmd(b.dataset.cmd, b.dataset.v, b.dataset.team);
+});
+
+window.addEventListener('load', () => {
+  if (!window.Peer) { toast('Pas d\'Internet : la télécommande ne marchera pas', null, 10000); }
+  const forced = document.body.dataset.role;
+  const p = new URLSearchParams(location.search).get('pin');
+  if (forced === 'display') selectRole('display');
+  else if (p || forced === 'remote') { selectRole('remote'); if (p) { $('pinInput').value = p; connectWithPin(); } else $('pinInput').focus(); }
+});
+</script>
+</body>
+</html>
